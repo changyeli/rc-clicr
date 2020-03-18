@@ -11,7 +11,7 @@ com/clips/clicr) for more details.
 
 
 
-## Files
+## Files & Folders
 
 To be added...
 
