@@ -13,7 +13,7 @@ com/clips/clicr) for more details.
 
 ## Files & Folders
 
-To be added...
+- ```requirements.txt```: the necessary Python 3 packages. Please make sure you have Python version >= 3.6. Note that PyTorch in this file supports GPU computing. If you would like to run models using CPU, please modify this file accordingly.
 
 
 
