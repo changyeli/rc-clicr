@@ -6,3 +6,4 @@ jupyter
 nltk
 pylint
 gensim
+transformers
