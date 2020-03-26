@@ -6,8 +6,7 @@ This the repo for HINF 5610 final project.
 
 ## Data
 
-We use [CliCR](https://www.semanticscholar.org/paper/CliCR%3A-A-Dataset-of-Clinical-Case-Reports-for-Suster-Daelemans/cd36768795c696c990ff5c89be8d8b3b205858bd), a dataset of clinical case reports for machine learning reading comprehension. If you want get the access to the dataset, please follow this [link](http://github.
-com/clips/clicr) for more details.
+We use [CliCR](https://www.semanticscholar.org/paper/CliCR%3A-A-Dataset-of-Clinical-Case-Reports-for-Suster-Daelemans/cd36768795c696c990ff5c89be8d8b3b205858bd), a dataset of clinical case reports for machine learning reading comprehension. If you want get the access to the dataset, please follow this [link](http://github.com/clips/clicr) for more details.
 
 
 
