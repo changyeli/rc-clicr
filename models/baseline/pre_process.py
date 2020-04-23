@@ -23,6 +23,19 @@ def extract_entity(paragraph):
     return tokens
 
 
+def clean_paragraph(paragraph):
+    """
+    remove all BEG__ and __END, newlines, lower the characters
+    :param str paragraph: the concated title and context
+    :return: cleaned title and context
+    :rtype: str
+    """
+    paragraph = re.sub(r"BEG__", "", paragraph)
+    paragraph = re.sub(r"__END", "", paragraph)
+    paragraph = re.sub(r"\s+", " ", paragraph)
+    return paragraph.lower()
+
+
 def extract_context(doc, key):
     """
     from a dictionary document doc, retrieve the content under key
@@ -39,15 +52,16 @@ def extract_context(doc, key):
         sys.stdout.write("No such key exists, please double check!")
 
 
-def add_to_dataframe(file, outfile):
+def add_to_dataframe(file, sample=True):
     """
-    convert each record in the json file into dataframe row
+    convert each record in the json file into DataFrame row
     :param str file: the filename of the json file
-    :param str outfile: the local file to save the dataframe
+    :param bool sample: indicator if the dataframe is a subset of full dataset,
+                        if yes, then the number of sample is 20
     """
     df = pd.DataFrame()
-    file = file + "1.0.json"
-    path = os.path.join("../../clicr", file)
+    read_file = file + "1.0.json"
+    path = os.path.join("../../clicr", read_file)
     with open(path) as f:
         data = json.load(f)
         for p in tqdm.tqdm(data["data"]):
@@ -57,6 +71,7 @@ def add_to_dataframe(file, outfile):
             body = title + " " + context
             tokens = extract_entity(body)
             body = re.sub(r"[^\x00-\x7F]+", " ", body)
+            body = clean_paragraph(body)
             qas = extract_context(p, "qas")
             for pairs in qas:
                 query = pairs["query"]
@@ -67,9 +82,18 @@ def add_to_dataframe(file, outfile):
                                 "qid": qid, "query": query, "answers": answers,
                                 "cui": list(set(cuis))[0]},
                                ignore_index=True)
-    print(df.head())
-    print(df.shape)
+    if sample:
+        sample = df.head(20)
+        sample_outfile = "sample" + "_" + file + ".tsv"
+        sample.to_csv(os.path.join("../../clicr", sample_outfile),
+                      sep="\t", index=False)
+    else:
+        outfile = file + ".tsv"
+        outfile = os.path.join("../../clicr", outfile)
+        df.to_csv(outfile, sep="\t", index=False)
 
 
 if __name__ == '__main__':
-    add_to_dataframe("train", "test")
+    add_to_dataframe("train")
+    add_to_dataframe("test")
+    add_to_dataframe("dev")
