@@ -5,7 +5,7 @@ import logging
 import sys
 from gensim.models import KeyedVectors
 from datetime import datetime
-from transformers import BertTokenizer, BertModel, BertForMaskedLM
+from transformers import BertTokenizer, BertForMaskedLM
 
 
 """
