@@ -3,7 +3,6 @@ import re
 import os
 import sys
 import tqdm
-from nltk.tokenize import sent_tokenize
 from datetime import datetime
 from transformers import BertTokenizer
 
@@ -40,29 +39,20 @@ def clean_paragraph(paragraph):
     return paragraph
 
 
-def generate_bert_format_context(title, context, tokenizer):
+def generate_bert_format_context(title, context):
     """
     generate the bert format given title and context
     :param str title: the title of the clinical reports
     :param str context: the context of the clinical reports
-    :param transformers.BertTokenizer: the bert tokenizer
     :return: bert formatted full body and segment id list
     :rtype: tuple
     """
-    title = clean_paragraph(title)
-    context = clean_paragraph(context)
-    sentences = sent_tokenize(context)
-    sentences = [title] + sentences
-    segment_ids = []
-    format = ""
-    for index, item in enumerate(sentences):
-        format = format + " [SEP] " + item
-        new_sen = " [SEP] " + item
-        segment_ids = segment_ids + [index] * (len(tokenizer.tokenize(new_sen)) + 1)
-    return format, segment_ids
+    sentences = title + " " + context
+    sentences = "[SEP] " + sentences
+    return sentences
 
 
-def generate_bert_format_qas(question, answer, tokenizer, data_type):
+def generate_bert_format_qas(question, answer, tokenizer):
     """
     generate the bert format for a pair of question and answer pair
     :param str question: the question from raw dataset
@@ -72,31 +62,16 @@ def generate_bert_format_qas(question, answer, tokenizer, data_type):
                           if the dataset is training set, then replace the answers
                             to the @placehoder
                           else, put the [MASK] tokens in the question
-    :return: the bert format question and the segment id
+    :return: the bert format question, question for training and index ids
     :rtype: tuple
     """
     question = clean_paragraph(question)
     question = "[CLS] " + question
     tokens = tokenizer.tokenize(answer)
-    if data_type == "train":
-        question = re.sub(r"@placeholder", answer, question)
-        tokens = tokenizer.tokenize(question)
-        indexes = [i for i in range(len(tokens)) if tokens[i] == "[MASK]"]
-        index_ids = [0] * len(tokens)
-        for i, value in enumerate(index_ids):
-            if i in indexes:
-                index_ids[i] = 1
-        return question, index_ids
-    else:
-        pattern = "[MASK] " * len(tokens)
-        question = re.sub(r"@placeholder", pattern, question)
-        tokens = tokenizer.tokenize(question)
-        indexes = [i for i in range(len(tokens)) if tokens[i] == "[MASK]"]
-        index_ids = [0] * len(tokens)
-        for i, value in enumerate(index_ids):
-            if i in indexes:
-                index_ids[i] = 1
-        return question, index_ids
+    question_for_train = re.sub(r"@placeholder", answer.lower(), question)
+    pattern = "[MASK] " * len(tokens)
+    question = re.sub(r"@placeholder", pattern, question)
+    return question, question_for_train
 
 
 def extract_context(doc, key):
@@ -117,7 +92,8 @@ def extract_context(doc, key):
 
 def add_to_dataframe(file):
     """
-    convert each record in the json file into DataFrame row
+    convert each record in the json file into jsonl
+    only save the frist 200 records
     :param str file: the filename of the json file
     """
     read_file = file + "1.0.json"
@@ -125,30 +101,58 @@ def add_to_dataframe(file):
     tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
     outfile = file + "_cleaned.jsonl"
     outpath = os.path.join("../../clicr", outfile)
+    outfile_train = file + "_cleaned_for_train.jsonl"
+    outpath_train = os.path.join("../../clicr", outfile_train)
+    # line counter
+    line = 0
     with open(path) as f:
         data = json.load(f)
         for p in tqdm.tqdm(data["data"]):
-            # document id
-            source = p["source"]
             # context body
             title = extract_context(p, "title")
             context = extract_context(p, "context")
             title = clean_paragraph(title)
             context = clean_paragraph(context)
-            body, segment_id = generate_bert_format_context(title, context, tokenizer)
             # question and answers
             qas = extract_context(p, "qas")
             for pairs in qas:
+                # question id
+                source = pairs["id"]
                 question = pairs["query"]
                 answers = [item["text"] for item in pairs["answers"]]
                 for ans in answers:
-                    label, index_ids = generate_bert_format_qas(question, ans,
-                                                                tokenizer, file)
-                    piece = {"source": source, "body": body, "segment_ids": segment_id,
-                             "query": label, "answers": answers, "index_ids": index_ids}
-                    with open(outpath, "a") as outF:
-                        json.dump(piece, outF)
-                        outF.write("\n")
+                    # save one copy for further training process
+                    if file == "train":
+                        question, question_for_train = generate_bert_format_qas(question,
+                                                                                ans, tokenizer)
+                        body = generate_bert_format_context(title, context)
+                        len_ques = len(tokenizer.tokenize(question))
+                        len_body = len(tokenizer.tokenize(body))
+                        segment_id = [0] * len_ques + [1] * len_body
+                        piece = {"source": source, "body": body, "segment_ids": segment_id,
+                                 "query": question, "answers": answers}
+                        with open(outpath, "a") as outF:
+                            json.dump(piece, outF)
+                            outF.write("\n")
+                        piece = {"source": source, "body": body, "segment_ids": segment_id,
+                                 "query": question_for_train, "answers": answers}
+                        with open(outpath_train, "a") as outF:
+                            json.dump(piece, outF)
+                            outF.write("\n")
+                    else:
+                        question, _ = generate_bert_format_qas(question, ans, tokenizer)
+                        body = generate_bert_format_context(title, context)
+                        len_ques = len(tokenizer.tokenize(question))
+                        len_body = len(tokenizer.tokenize(body))
+                        segment_id = [0] * len_ques + [1] * len_body
+                        piece = {"source": source, "body": body, "segment_ids": segment_id,
+                                 "query": question, "answers": answers}
+                        with open(outpath, "a") as outF:
+                            json.dump(piece, outF)
+                            outF.write("\n")
+                    line += 1
+            if line > 200:
+                break
 
 
 if __name__ == '__main__':
