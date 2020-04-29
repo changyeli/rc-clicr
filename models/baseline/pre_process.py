@@ -3,12 +3,18 @@ import re
 import os
 import sys
 import tqdm
+import random
 from datetime import datetime
 from transformers import BertTokenizer
 
 """
-Dataset pre-processing for Bert format
+Dataset pre-processing for:
+    - Bert format
+    - general format
 """
+
+
+random.seed(42)
 
 
 def extract_entity(paragraph):
@@ -42,14 +48,39 @@ def clean_paragraph(paragraph):
 def generate_bert_format_context(title, context):
     """
     generate the bert format given title and context
-    :param str title: the title of the clinical reports
-    :param str context: the context of the clinical reports
+    :param str title: the cleaned title of the clinical reports
+    :param str context: the cleaned context of the clinical reports
     :return: bert formatted full body and segment id list
-    :rtype: tuple
+    :rtype: str
     """
     sentences = title + " " + context
     sentences = "[SEP] " + sentences
     return sentences
+
+
+def generate_context(title, context):
+    """
+    generate the norm format given title and context
+    :param str title: the cleaned title of the clinical reports
+    :param str context: the cleaned context of the clinical reports
+    :return: the full context for the question
+    :rtype: str
+    """
+    sentences = title + " " + context
+    return sentences
+
+
+def generate_qas(question, answer):
+    """
+    generate the norm format for a pair of question and answer pair
+    :param str question: the question from raw dataset
+    :param str answer: the answer from raw dataset
+    :return: the norm format question, question for training and index ids
+    :rtype: str
+    """
+    question = re.sub(r"@placeholder", answer.lower(), question)
+    question = clean_paragraph(question)
+    return question
 
 
 def generate_bert_format_qas(question, answer, tokenizer):
@@ -99,12 +130,11 @@ def add_to_dataframe(file):
     read_file = file + "1.0.json"
     path = os.path.join("../../clicr", read_file)
     tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
-    outfile = file + "_cleaned.jsonl"
+    outfile = file + "bert_cleaned.jsonl"
     outpath = os.path.join("../../clicr", outfile)
-    outfile_train = file + "_cleaned_for_train.jsonl"
+    outfile_train = file + "bert_cleaned_for_train.jsonl"
     outpath_train = os.path.join("../../clicr", outfile_train)
-    # line counter
-    line = 0
+    ids = []
     with open(path) as f:
         data = json.load(f)
         for p in tqdm.tqdm(data["data"]):
@@ -118,19 +148,20 @@ def add_to_dataframe(file):
             for pairs in qas:
                 # question id
                 source = pairs["id"]
+                ids.append(source)
                 question = pairs["query"]
                 answers = [item["text"] for item in pairs["answers"]]
                 for ans in answers:
                     # save one copy for further training process
                     if file == "train":
-                        question, question_for_train = generate_bert_format_qas(question,
+                        query, question_for_train = generate_bert_format_qas(question,
                                                                                 ans, tokenizer)
                         body = generate_bert_format_context(title, context)
                         len_ques = len(tokenizer.tokenize(question))
                         len_body = len(tokenizer.tokenize(body))
                         segment_id = [0] * len_ques + [1] * len_body
                         piece = {"source": source, "body": body, "segment_ids": segment_id,
-                                 "query": question, "answers": answers}
+                                 "query": query, "answers": answers}
                         with open(outpath, "a") as outF:
                             json.dump(piece, outF)
                             outF.write("\n")
@@ -140,31 +171,81 @@ def add_to_dataframe(file):
                             json.dump(piece, outF)
                             outF.write("\n")
                     else:
-                        question, _ = generate_bert_format_qas(question, ans, tokenizer)
+                        query, _ = generate_bert_format_qas(question, ans, tokenizer)
                         body = generate_bert_format_context(title, context)
                         len_ques = len(tokenizer.tokenize(question))
                         len_body = len(tokenizer.tokenize(body))
                         segment_id = [0] * len_ques + [1] * len_body
                         piece = {"source": source, "body": body, "segment_ids": segment_id,
-                                 "query": question, "answers": answers}
+                                 "query": query, "answers": answers}
                         with open(outpath, "a") as outF:
                             json.dump(piece, outF)
                             outF.write("\n")
-                    line += 1
-            if line > 200:
+            if len(set(ids)) > 50:
+                break
+
+
+def generate_norm_dataframe(file):
+    """
+    generate the norm dataframe given the file
+    save the first 200 questions
+    :param str file: the type of the data to read
+    :return:
+    """
+    read_file = file + "1.0.json"
+    path = os.path.join("../../clicr", read_file)
+    outfile = file + "_norm.jsonl"
+    outfile = os.path.join("../../clicr", outfile)
+    ids = []
+    entity = []
+    with open(path) as f:
+        data = json.load(f)
+        for p in tqdm.tqdm(data["data"]):
+            title = extract_context(p, "title")
+            entity.extend(extract_entity(title))
+            context = extract_context(p, "context")
+            entity.extend(extract_entity(context))
+            title = clean_paragraph(title)
+            context = clean_paragraph(context)
+            body = title + " " + context
+            qas = extract_context(p, "qas")
+            for pairs in qas:
+                # question id
+                source = pairs["id"]
+                question = pairs["query"]
+                answers = [item["text"] for item in pairs["answers"]]
+                for ans in answers:
+                    true_query = generate_qas(question, ans)
+                    # generate possible
+                    for item in entity:
+                        possible_qas = generate_qas(question, item)
+                        piece = {"source": source, "body": body,
+                                 "possible_qas": possible_qas,
+                                 "query": true_query,
+                                 "poss_answer": item,
+                                 "answer": ans}
+                        with open(outfile, "a") as outF:
+                            json.dump(piece, outF)
+                            outF.write("\n")
+                        ids.append(source)
+            if len(set(ids)) > 50:
                 break
 
 
 if __name__ == '__main__':
     start_time = datetime.now()
+    # bert format
     sys.stdout.write("=============================\n")
     sys.stdout.write("Pre-processing training set\n")
     add_to_dataframe("train")
+    generate_norm_dataframe("train")
     sys.stdout.write("=============================\n")
     sys.stdout.write("Pre-processing test set\n")
     add_to_dataframe("test")
+    generate_norm_dataframe("test")
     sys.stdout.write("=============================\n")
     sys.stdout.write("Pre-processing development set\n")
     add_to_dataframe("dev")
+    generate_norm_dataframe("dev")
     sys.stdout.write("=============================\n")
     sys.stdout.write("total running time: {}".format(datetime.now() - start_time))

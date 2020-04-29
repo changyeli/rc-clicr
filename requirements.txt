@@ -7,3 +7,5 @@ nltk
 pylint
 gensim
 transformers
+spacy-transformers
+pandas
