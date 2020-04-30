@@ -1,14 +1,15 @@
 import torch
-import sys
 import os
 import tqdm
 import json
+import numpy as np
 from datetime import datetime
 from transformers import BertTokenizer, BertForMaskedLM
 from utils import extract_context
 from utils import clean_paragraph
 from utils import generate_bert_format_qas
 from utils import generate_bert_format_context
+from Levenshtein import distance
 
 
 """
@@ -19,14 +20,17 @@ Bert for Masked language model, with pre-processing
 def iterate_first_20_doc(infile):
     """
     iterate the first 20 doc from the input file,
-    preprocess each doc, and
-    :param infile: the filename of the json file
+    preprocess each doc, and make prediction
+    write predicted tokens in to local file
+    :param infile: the type of input json file
     :return:
     """
     read_file = infile + "1.0.json"
     path = os.path.join("../../clicr", read_file)
-    model = BertForMaskedLM.from_pretrained("bert-base-uncased")
-    tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+    outfile = infile + "_pred.json"
+    outpath = os.path.join("../../clicr", outfile)
+    model = BertForMaskedLM.from_pretrained("bert-large-uncased-whole-word-masking")
+    tokenizer = BertTokenizer.from_pretrained("bert-large-uncased-whole-word-masking")
     # for reproducible results during evaluation
     model.eval()
     model.to("cuda")
@@ -36,6 +40,7 @@ def iterate_first_20_doc(infile):
         for p in tqdm.tqdm(data["data"]):
             title = extract_context(p, "title")
             context = extract_context(p, "context")
+            # remove punctuations
             title = clean_paragraph(title)
             context = clean_paragraph(context)
             # question and answers
@@ -54,6 +59,12 @@ def iterate_first_20_doc(infile):
                     # keep only first 512 tokens
                     segment_id = segment_id[:512]
                     tokens = tokens[:512]
+                    # padding tokens to 512
+                    if len(tokens) < 512:
+                        num_pad = 512 - len(tokens)
+                        padding = ["[PAD]"] * num_pad
+                        tokens += padding
+                        segment_id = segment_id + [1] * num_pad
                     # make sure the embedding length == 512
                     assert len(tokens) == 512
                     # generate mask indexes and associated locations
@@ -75,12 +86,51 @@ def iterate_first_20_doc(infile):
                     pred_text = [tokenizer.convert_ids_to_tokens(index) for index in pred_index]
                     # make sure every masked token get predictions
                     assert len(index_loc) == len(pred_text)
-                    print(pred_text)
-                    break
-                break
-            break
+                    # human readable answer
+                    fine_text = " ".join([x for x in pred_text])
+                    fine_text = fine_text.replace(" ##", "")
+                    piece = {"true_answer": ans,
+                             "pred_answer": fine_text,
+                             "EM": ans == fine_text,
+                             "answers": answers}
+                    with open(outpath, "a") as outF:
+                        json.dump(piece, outF)
+                        outF.write("\n")
             line += 1
+            if line > 20:
+                break
+
+
+def calculate_em(infile):
+    """
+    calculate the EM shares given an input file
+    # TODO: calcualte partial match between two strings
+    :param infile: the type of input json file
+    """
+    outfile = infile + "_pred.json"
+    outpath = os.path.join("../../clicr", outfile)
+    if os.path.isfile(outpath):
+        em = 0
+        count = 0
+        find_true_tokens = 0
+        with open(outpath, "r") as f:
+            for line in f:
+                content = json.loads(line)
+                if content["EM"]:
+                    em += 1
+                if content["pred_answer"] in content["answers"]:
+                    find_true_tokens += 1
+                count += 1
+        print("EM percentage in {}: {}".format(infile, em / count))
+        print("# of times of finding a true answer: {}".format(find_true_tokens/count))
+    else:
+        iterate_first_20_doc(infile)
+        calculate_em(infile)
 
 
 if __name__ == '__main__':
-    iterate_first_20_doc("train")
+    start_time = datetime.now()
+    calculate_em("train")
+    calculate_em("test")
+    calculate_em("dev")
+    print("total running time: {}".format(datetime.now() - start_time))

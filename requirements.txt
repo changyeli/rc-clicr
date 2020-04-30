@@ -1,11 +1,7 @@
 numpy
 torch
 torchvision
-scipy
 jupyter
-nltk
 pylint
 gensim
 transformers
-spacy-transformers
-pandas

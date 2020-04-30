@@ -1,5 +1,6 @@
 import sys
 import re
+import string
 
 
 """
@@ -32,6 +33,7 @@ def extract_entity(paragraph):
     :rtype: list
     """
     tokens = re.findall(r"BEG__(.*?)__END", paragraph)
+    tokens = [item.lower() for item in tokens]
     return tokens
 
 
