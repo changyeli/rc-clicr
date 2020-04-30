@@ -2,14 +2,14 @@ import torch
 import os
 import tqdm
 import json
-import numpy as np
+import sys
+import logging
 from datetime import datetime
 from transformers import BertTokenizer, BertForMaskedLM
 from utils import extract_context
 from utils import clean_paragraph
 from utils import generate_bert_format_qas
 from utils import generate_bert_format_context
-from Levenshtein import distance
 
 
 """
@@ -17,13 +17,13 @@ Bert for Masked language model, with pre-processing
 """
 
 
-def iterate_first_20_doc(infile):
+def iterate_first_n_doc(infile, n):
     """
-    iterate the first 20 doc from the input file,
+    iterate the first 50 doc from the input file,
     preprocess each doc, and make prediction
     write predicted tokens in to local file
-    :param infile: the type of input json file
-    :return:
+    :param str infile: the type of input json file
+    :param int n: number of docs to iterate
     """
     read_file = infile + "1.0.json"
     path = os.path.join("../../clicr", read_file)
@@ -97,15 +97,16 @@ def iterate_first_20_doc(infile):
                         json.dump(piece, outF)
                         outF.write("\n")
             line += 1
-            if line > 20:
+            if line > n:
                 break
 
 
-def calculate_em(infile):
+def calculate_em(infile, n):
     """
     calculate the EM shares given an input file
     # TODO: calcualte partial match between two strings
-    :param infile: the type of input json file
+    :param str infile: the type of input json file
+    :param int n: number of docs to iterate
     """
     outfile = infile + "_pred.json"
     outpath = os.path.join("../../clicr", outfile)
@@ -121,16 +122,21 @@ def calculate_em(infile):
                 if content["pred_answer"] in content["answers"]:
                     find_true_tokens += 1
                 count += 1
-        print("EM percentage in {}: {}".format(infile, em / count))
-        print("# of times of finding a true answer: {}".format(find_true_tokens/count))
+        sys.stdout.write("EM percentage in {}: {}\n".format(infile, em / count))
+        sys.stdout.write("# of times of finding a true answer: {}\n".format(find_true_tokens/20))
+        sys.stdout.write("total q&a pairs: {}\n".format(count))
     else:
-        iterate_first_20_doc(infile)
-        calculate_em(infile)
+        iterate_first_n_doc(infile, n)
+        calculate_em(infile, n)
 
 
 if __name__ == '__main__':
+    log = open("bert_masked.log", "a")
+    sys.stdout = log
+    logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s',
+                        filemode="a", level=logging.INFO, filename="bert_masked.log")
     start_time = datetime.now()
-    calculate_em("train")
-    calculate_em("test")
-    calculate_em("dev")
-    print("total running time: {}".format(datetime.now() - start_time))
+    calculate_em("train", 50)
+    calculate_em("test", 50)
+    calculate_em("dev", 50)
+    sys.stdout.write("total running time: {}\n".format(datetime.now() - start_time))
