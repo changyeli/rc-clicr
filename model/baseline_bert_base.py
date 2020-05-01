@@ -215,6 +215,13 @@ def predict_from_pretirain_bert(infile, outfile):
         if i%20 == 0:
             print('Finish %d Queries'%(i))
             
+
+            
+    result = pd.DataFrame({'Query':ids[:len(predicted_token_lst)],
+                           'True Answer': [w.replace("@entity",'').replace("_",' ') for w in answers[:len(predicted_token_lst)]],
+                           'Pred Answer': predicted_token_lst,
+                           'True Answer set': answersets[:len(predicted_token_lst)]})
+    result.to_csv(outfile)
     
     AM=set()
     for i in range(len(predicted_token_lst)):
@@ -222,11 +229,5 @@ def predict_from_pretirain_bert(infile, outfile):
             if predicted_token_lst[i] == ans[0].lower():
                 AM.add(i)
                 print(predicted_token_lst[i],ans[0])
-            
-    result = pd.DataFrame({'Query':ids[:len(predicted_token_lst)], 
-                           'True Answer': [w.replace("@entity",'').replace("_",' ') for w in answers[:len(predicted_token_lst)]],
-                           'Pred Answer': predicted_token_lst,
-                           'True Answer set': answersets[:len(predicted_token_lst)]})
-    result.to_csv(outfile)
-    
-
+                
+    print('AM: %f'%(len(AM)/len(predicted_token_lst)))  

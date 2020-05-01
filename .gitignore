@@ -129,3 +129,4 @@ dmypy.json
 .pyre/
 dataset-code/*.*
 clicr/*.*
+.DS_Store
