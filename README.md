@@ -23,7 +23,7 @@ NNLM
 
 ## Note
 
-Part of the utility code in NNLM folder are from the original artical[link](http://github.com/clips/clicr). To make the code NNLM self-contained, they are also included here. 
+Part of the utility code in NNLM folder are from the original artical [link](http://github.com/clips/clicr). To make the code NNLM self-contained, they are also included here. 
 
 
 
