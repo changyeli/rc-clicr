@@ -3,6 +3,7 @@ import os
 import tqdm
 import json
 import sys
+import pandas as pd
 import logging
 from datetime import datetime
 from transformers import BertTokenizer, BertForMaskedLM
@@ -10,7 +11,6 @@ from utils import extract_context
 from utils import clean_paragraph
 from utils import generate_bert_format_qas
 from utils import generate_bert_format_context
-
 
 """
 Bert for Masked language model, with pre-processing
@@ -49,6 +49,7 @@ def iterate_first_n_doc(infile, n):
                 source = pairs["id"]
                 question = pairs["query"]
                 answers = [item["text"] for item in pairs["answers"]]
+                answers = [item.lower() for item in answers]
                 for ans in answers:
                     query = generate_bert_format_qas(question, ans, tokenizer)
                     body = generate_bert_format_context(title, context)
@@ -89,9 +90,10 @@ def iterate_first_n_doc(infile, n):
                     # human readable answer
                     fine_text = " ".join([x for x in pred_text])
                     fine_text = fine_text.replace(" ##", "")
-                    piece = {"true_answer": ans,
+                    piece = {"qid": source,
+                             "true_answer": ans.lower(),
                              "pred_answer": fine_text,
-                             "EM": ans == fine_text,
+                             "EM": ans.lower() == fine_text,
                              "answers": answers}
                     with open(outpath, "a") as outF:
                         json.dump(piece, outF)
@@ -101,15 +103,16 @@ def iterate_first_n_doc(infile, n):
                 break
 
 
-def calculate_em(infile, n):
+def calculate_em_answer_level(infile, n):
     """
-    calculate the EM shares given an input file
+    calculate the EM shares given an input file on answer level
     # TODO: calcualte partial match between two strings
     :param str infile: the type of input json file
     :param int n: number of docs to iterate
     """
     outfile = infile + "_pred.json"
     outpath = os.path.join("../../clicr", outfile)
+    sys.stdout.write("answer level calculation\n")
     if os.path.isfile(outpath):
         em = 0
         count = 0
@@ -122,12 +125,44 @@ def calculate_em(infile, n):
                 if content["pred_answer"] in content["answers"]:
                     find_true_tokens += 1
                 count += 1
-        sys.stdout.write("EM percentage in {}: {}\n".format(infile, em / count))
-        sys.stdout.write("# of times of finding a true answer: {}\n".format(find_true_tokens/20))
+        sys.stdout.write("EM count: {}\n".format(em))
+        sys.stdout.write("# of tokens are true answers count: {}\n".format(find_true_tokens))
         sys.stdout.write("total q&a pairs: {}\n".format(count))
     else:
         iterate_first_n_doc(infile, n)
-        calculate_em(infile, n)
+        calculate_em_answer_level(infile, n)
+
+
+def calculate_em_question_level(infile, n):
+    """
+    calculate exact match on question level, with first n docs
+    :param infile: the type of input data
+    :param n: the number of first n focs
+    """
+    outfile = infile + "_pred.json"
+    outpath = os.path.join("../../clicr", outfile)
+    sys.stdout.write("question level calculation\n")
+    if os.path.isfile(outpath):
+        em = 0
+        find_true_tokens = 0
+        df = pd.read_json(outpath, lines=True)
+        qids = df["qid"].unique()
+        for ids in qids:
+            temp = df.loc[df["qid"] == ids]
+            em_count = temp.loc[temp["EM"] == True]
+            if em_count.shape[0] > 0:
+                em += 1
+            answer_list = temp["pred_answer"].unique()
+            true_answer_list = temp["answers"].values.tolist()[0]
+            common = any(item in answer_list for item in true_answer_list)
+            if common:
+                find_true_tokens += 1
+        sys.stdout.write("EM count: {}\n".format(em))
+        sys.stdout.write("# of tokens are true answers count: {}\n".format(find_true_tokens))
+        sys.stdout.write("total questions: {}\n".format(len(qids)))
+    else:
+        iterate_first_n_doc(infile, n)
+        calculate_em_question_level(infile, n)
 
 
 if __name__ == '__main__':
@@ -136,7 +171,14 @@ if __name__ == '__main__':
     logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s',
                         filemode="a", level=logging.INFO, filename="bert_masked.log")
     start_time = datetime.now()
-    calculate_em("train", 50)
-    calculate_em("test", 50)
-    calculate_em("dev", 50)
+    n = 20
+    sys.stdout.write("============== {} =============\n".format("train"))
+    calculate_em_answer_level("train", n)
+    calculate_em_question_level("train", n)
+    sys.stdout.write("============== {} =============\n".format("test"))
+    calculate_em_answer_level("test", n)
+    calculate_em_question_level("test", n)
+    sys.stdout.write("============== {} =============\n".format("dev"))
+    calculate_em_answer_level("dev", n)
+    calculate_em_question_level("dev", n)
     sys.stdout.write("total running time: {}\n".format(datetime.now() - start_time))
