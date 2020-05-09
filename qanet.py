@@ -7,15 +7,6 @@ Original file is located at
     https://colab.research.google.com/drive/1L_7KhV2Eki1I4fnotmr--5KBkqZ9O8kW
 """
 
-from google.colab import drive
-drive.mount('/content/drive')
-
-!ls '/content/drive/My Drive/Question_Answering_Project'
-
-!cp '/content/drive/My Drive/Question_Answering_Project/glove.840B.300d.txt' 'glove.840B.300d.txt'
-
-!ls
-
 # Commented out IPython magic to ensure Python compatibility.
 # %tensorflow_version 1.x
 
@@ -29,30 +20,10 @@ from sklearn.manifold import TSNE
 #import tensorflow.compat.v1 as tf
 #tf.disable_v2_behavior()
 
+from util import get_record_parser, convert_tokens, evaluate, get_batch_dataset, get_dataset
 from layers import initializer, regularizer, residual_block, highway, conv, mask_logits, trilinear, total_params, optimized_trilinear_for_attention
 
-def loadGloveModel(gloveFile):
-    print("Loading Glove Model")
-    f = open(gloveFile,'r')
-    model = {}
-    for line in f:
-        splitLine = line.split()
-        word = splitLine[0]
-        embedding = np.array([float(val) for val in splitLine[1:]])
-        model[word] = embedding
-    print("Done.",len(model)," words loaded!")
-    return model
-word_mat = loadGloveModel("word2vec_glove.txt")
-#word_mat = loadGloveModel("glove.840B.300d.txt")
-
-word_mat = np.array(list(word_mat.items()))
-print(type(word_mat))
-
-word_mat2 = np.loadtxt("word2vec_glove.txt", usecols=range(1, 100+1), comments=None)
-
-import pandas as pd
-dev = pd.read_csv('dev.csv') 
-dev.head()
+#word_mat2 = np.loadtxt("word2vec_glove.txt",usecols=range(1, 100+1), comments=None)
 
 N = 32 #num_batch
 PL = 400 #passage_length
@@ -63,37 +34,35 @@ dim = 128 #dimension
 dim_char = 32 #character_dimension
 test_para_limit = 1000
 test_ques_limit = 100
-#word_mat = np.loadtxt("glove.840B.300d.txt",dtype ='string',delimiter = ' ') # or your choice of word vectors
+word_mat = np.loadtxt("glove.840B.300d.txt",dtype ='string',delimiter = ' ') 
  
 context = tf.placeholder(tf.int32, [None, PL],"context")
 quesion = tf.placeholder(tf.int32, [None, QL],"question")
-
+context_char = tf.placeholder(tf.int32, [None, PL, char_lim],"context_char")
+question_char = tf.placeholder(tf.int32, [None, QL, char_lim],"question_char")
 y1 = tf.placeholder(tf.int32, [None, PL],"answer_index1")
 y2 = tf.placeholder(tf.int32, [None, PL],"answer_index2")
 
-word_mat = tf.get_variable("word_mat", initializer=tf.constant(word_mat2, dtype=tf.float32), trainable=False)
+word_mat = tf.get_variable("word_mat", initializer=tf.constant(word_mat, dtype=tf.float32), trainable=False)
+char_mat = tf.get_variable("char_mat", initializer=tf.constant(char_mat, dtype=tf.float32))
 
-#context_char_emb = tf.reshape(tf.nn.embedding_lookup(
-#    word_mat, context_char), [N * PL, char_lim, dim_char])
-#quesion_char_emb = tf.reshape(tf.nn.embedding_lookup(
-#    word_mat, question_char), [N * QL, char_lim, dim_char])
+context_char_emb = tf.reshape(tf.nn.embedding_lookup(word_mat, context_char), [N * PL, char_lim, dim_char])
+quesion_char_emb = tf.reshape(tf.nn.embedding_lookup(word_mat, question_char), [N * QL, char_lim, dim_char])
 
-#context_char_emb = conv(context_char_emb, dim,
-#    bias = True, activation = tf.nn.relu, kernel_size = 5, name = "char_conv", reuse = None)
-#quesion_char_emb = conv(quesion_char_emb, dim,
-#    bias = True, activation = tf.nn.relu, kernel_size = 5, name = "char_conv", reuse = True)
+context_char_emb = conv(context_char_emb, dim, bias = True, activation = tf.nn.relu, kernel_size = 5, name = "char_conv", reuse = None)
+quesion_char_emb = conv(quesion_char_emb, dim, bias = True, activation = tf.nn.relu, kernel_size = 5, name = "char_conv", reuse = True)
 
-#context_char_emb = tf.reduce_max(context_char_emb, axis = 1)
-#quesion_char_emb = tf.reduce_max(quesion_char_emb, axis = 1)
+context_char_emb = tf.reduce_max(context_char_emb, axis = 1)
+quesion_char_emb = tf.reduce_max(quesion_char_emb, axis = 1)
 
-#context_char_emb = tf.reshape(context_char_emb, [N, PL, dim])
-#quesion_char_emb = tf.reshape(quesion_char_emb, [N, QL, dim])
+context_char_emb = tf.reshape(context_char_emb, [N, PL, dim])
+quesion_char_emb = tf.reshape(quesion_char_emb, [N, QL, dim])
 
 context_emb = tf.nn.embedding_lookup(word_mat, context)
 question_emb = tf.nn.embedding_lookup(word_mat, quesion)
 
-#context_emb = tf.concat([context_emb, context_char_emb], axis=2)
-#question_emb = tf.concat([question_emb, quesion_char_emb], axis=2)
+context_emb = tf.concat([context_emb, context_char_emb], axis=2)
+question_emb = tf.concat([question_emb, quesion_char_emb], axis=2)
 
 context_emb = highway(context_emb, size = dim, scope = "highway", reuse = None)#layers = 2,
 question_emb = highway(question_emb, size = dim,  scope = "highway", reuse = True)#layers = 2,
