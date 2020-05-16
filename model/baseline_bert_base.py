@@ -230,4 +230,9 @@ def predict_from_pretirain_bert(infile, outfile):
                 AM.add(i)
                 print(predicted_token_lst[i],ans[0])
                 
-    print('AM: %f'%(len(AM)/len(predicted_token_lst)))  
+    print('AM: %f'%(len(AM)/len(predicted_token_lst)))
+    
+    if __name__ == '__main__':
+        ## infile: data json file 
+        ## outfile predict result csv
+        predict_from_pretirain_bert('./clicr/test1.0.json', 'result_test_entity.csv')
